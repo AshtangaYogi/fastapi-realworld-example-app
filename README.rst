@@ -29,45 +29,87 @@
 
 More modern and relevant examples can be found in other repositories with ``fastapi`` tag on GitHub.
 
+Prerequisites
+-------------
+
+- Python 3.9 (recommended for best compatibility with dependencies)
+- Poetry (for dependency management)
+- Docker (for running PostgreSQL)
+
 Quickstart
 ----------
 
-First, run ``PostgreSQL``, set environment variables and create database. For example using ``docker``: ::
+1. Start PostgreSQL using Docker
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-    export POSTGRES_DB=rwdb POSTGRES_PORT=5432 POSTGRES_USER=postgres POSTGRES_PASSWORD=postgres
-    docker run --name pgdb --rm -e POSTGRES_USER="$POSTGRES_USER" -e POSTGRES_PASSWORD="$POSTGRES_PASSWORD" -e POSTGRES_DB="$POSTGRES_DB" postgres
-    export POSTGRES_HOST=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' pgdb)
-    createdb --host=$POSTGRES_HOST --port=$POSTGRES_PORT --username=$POSTGRES_USER $POSTGRES_DB
+Run PostgreSQL in a Docker container with port mapping::
 
-Then run the following commands to bootstrap your environment with ``poetry``: ::
+    docker run --name pgdb --rm -d \
+        -p 5432:5432 \
+        -e POSTGRES_USER=postgres \
+        -e POSTGRES_PASSWORD=postgres \
+        -e POSTGRES_DB=rwdb \
+        postgres:11.5-alpine
+
+Verify the container is running::
+
+    docker ps | grep pgdb
+
+2. Install dependencies with Poetry
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Clone the repository and install dependencies::
 
     git clone https://github.com/nsidnev/fastapi-realworld-example-app
     cd fastapi-realworld-example-app
     poetry install
-    poetry shell
 
-Then create ``.env`` file (or rename and modify ``.env.example``) in project root and set environment variables for application: ::
+3. Configure environment variables
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-    touch .env
-    echo APP_ENV=dev >> .env
-    echo DATABASE_URL=postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@$POSTGRES_HOST:$POSTGRES_PORT/$POSTGRES_DB >> .env
-    echo SECRET_KEY=$(openssl rand -hex 32) >> .env
+Create a ``.env`` file in the project root with the following content::
 
-To run the web application in debug use::
+    DATABASE_URL=postgresql://postgres:postgres@localhost:5432/rwdb
+    SECRET_KEY=your-secret-key-here
+    APP_ENV=dev
 
-    alembic upgrade head
-    uvicorn app.main:app --reload
+You can generate a secure secret key with::
 
-If you run into the following error in your docker container:
+    openssl rand -hex 32
 
-   sqlalchemy.exc.OperationalError: (psycopg2.OperationalError) could not connect to server: No such file or directory
-   Is the server running locally and accepting
-   connections on Unix domain socket "/tmp/.s.PGSQL.5432"?
+The ``APP_ENV`` variable controls which settings are loaded:
 
-Ensure the DATABASE_URL variable is set correctly in the `.env` file.
-It is most likely caused by POSTGRES_HOST not pointing to its localhost.
+- ``dev`` - Development settings (default database URL, debug enabled)
+- ``prod`` - Production settings (requires DATABASE_URL and SECRET_KEY)
+- ``test`` - Test settings (used when running tests)
 
-   DATABASE_URL=postgresql://postgres:postgres@0.0.0.0:5432/rwdb
+4. Run database migrations
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Apply the database migrations::
+
+    poetry run alembic upgrade head
+
+5. Start the application
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+Run the web application in development mode::
+
+    poetry run uvicorn app.main:app --reload
+
+The application will be available at http://localhost:8000
+
+Troubleshooting
+~~~~~~~~~~~~~~~
+
+If you encounter a database connection error like::
+
+    sqlalchemy.exc.OperationalError: (psycopg2.OperationalError) could not connect to server
+
+Verify that:
+
+1. The PostgreSQL container is running: ``docker ps | grep pgdb``
+2. The ``DATABASE_URL`` in your ``.env`` file points to the correct host (use ``localhost`` when running Docker with port mapping)
 
 
 
@@ -76,42 +118,42 @@ Run tests
 
 Tests for this project are defined in the ``tests/`` folder.
 
-Set up environment variable ``DATABASE_URL`` or set up ``database_url`` in ``app/core/settings/test.py``
+This project uses `pytest <https://docs.pytest.org/>`_ to define tests because it allows you to use the ``assert`` keyword with good formatting for failed assertions.
 
-This project uses `pytest
-<https://docs.pytest.org/>`_ to define tests because it allows you to use the ``assert`` keyword with good formatting for failed assertations.
+Prerequisites for testing
+~~~~~~~~~~~~~~~~~~~~~~~~~
 
+Before running tests, ensure:
 
-To run all the tests of a project, simply run the ``pytest`` command: ::
+1. PostgreSQL is running (see Quickstart section)
+2. The ``DATABASE_URL`` environment variable is set in your ``.env`` file
 
-    $ pytest
-    ================================================= test session starts ==================================================
-    platform linux -- Python 3.8.3, pytest-5.4.2, py-1.8.1, pluggy-0.13.1
-    rootdir: /home/some-user/user-projects/fastapi-realworld-example-app, inifile: setup.cfg, testpaths: tests
-    plugins: env-0.6.2, cov-2.9.0, asyncio-0.12.0
-    collected 90 items
+Running all tests
+~~~~~~~~~~~~~~~~~
 
-    tests/test_api/test_errors/test_422_error.py .                                                                   [  1%]
-    tests/test_api/test_errors/test_error.py .                                                                       [  2%]
-    tests/test_api/test_routes/test_articles.py .................................                                    [ 38%]
-    tests/test_api/test_routes/test_authentication.py ..                                                             [ 41%]
-    tests/test_api/test_routes/test_comments.py ....                                                                 [ 45%]
-    tests/test_api/test_routes/test_login.py ...                                                                     [ 48%]
-    tests/test_api/test_routes/test_profiles.py ............                                                         [ 62%]
-    tests/test_api/test_routes/test_registration.py ...                                                              [ 65%]
-    tests/test_api/test_routes/test_tags.py ..                                                                       [ 67%]
-    tests/test_api/test_routes/test_users.py ....................                                                    [ 90%]
-    tests/test_db/test_queries/test_tables.py ...                                                                    [ 93%]
-    tests/test_schemas/test_rw_model.py .                                                                            [ 94%]
-    tests/test_services/test_jwt.py .....                                                                            [100%]
+To run all tests with coverage reporting::
 
-    ============================================ 90 passed in 70.50s (0:01:10) =============================================
-    $
+    poetry run pytest
 
-If you want to run a specific test, you can do this with `this
-<https://docs.pytest.org/en/latest/usage.html#specifying-tests-selecting-tests>`_ pytest feature: ::
+The test configuration in ``pyproject.toml`` includes coverage reporting and parallel test execution.
 
-    $ pytest tests/test_api/test_routes/test_users.py::test_user_can_not_take_already_used_credentials
+Running specific tests
+~~~~~~~~~~~~~~~~~~~~~~
+
+To run a specific test file::
+
+    poetry run pytest tests/test_api/test_routes/test_users.py
+
+To run a specific test function::
+
+    poetry run pytest tests/test_api/test_routes/test_users.py::test_user_can_not_take_already_used_credentials
+
+Running tests with verbose output
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+For more detailed test output::
+
+    poetry run pytest -v
 
 Deployment with Docker
 ----------------------
